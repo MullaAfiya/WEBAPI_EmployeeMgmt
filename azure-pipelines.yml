@@ -1,34 +1,68 @@
+name: webAPI_$(Date:yyyyMMdd)$(Rev:.r)
 trigger:
 - main
-
 pool:
-  name: Default # Use an appropriate image based on your project requirements
-
+  name: Default
 
 variables:
-  solution: '**/*.sln' # Adjust the path to your solution file if needed
+  buildPlatform: 'Any CPU' 
   buildConfiguration: 'Release'
+  solution: '**/WebAPI.sln'
 
-stages:
-- stage: Build
-  jobs:
-  - job: Build
-    displayName: 'Build Job'
-    steps:
-    - task: UseDotNet@2
-      inputs:
-        packageType: 'sdk'
-        version: '3.x' # Use the appropriate .NET version
+jobs:
+- job: BuildAndTest
+  displayName: 'Build and Test'
+  steps:
+  - task: NuGetToolInstaller@1
+    displayName: 'NuGet Tool Installer'
+    inputs:
+      versionSpec: '5.8.x'
 
-    - script: dotnet restore
-      displayName: 'Restore NuGet packages'
+  - task: NuGetCommand@2
+    displayName: 'NuGet Restore'
+    inputs:
+      command: 'restore'
+      restoreSolution: '$(solution)'
+      feedsToUse: 'select'
 
-    - script: dotnet build --configuration $(buildConfiguration) $(solution)
-      displayName: 'Build solution'
+  - task: PowerShell@2
+    displayName: 'Install .NET SDK'
+    inputs:
+      targetType: 'inline'
+      script: |
+        $dotnetVersion = "6.0.418"
+        Invoke-WebRequest -Uri "https://dot.net/v1/dotnet-install.ps1" -OutFile "$env:TEMP\dotnet-install.ps1"
+        . "$env:TEMP\dotnet-install.ps1" -Channel LTS -Version $dotnetVersion -InstallDir "$env:USERPROFILE\.dotnet" -NoPath
+        $env:PATH += ";$env:C:\AfiyaAgentAzure\New folder\_work\_tool\dotnet"
+        dotnet --version
 
-    - task: PublishBuildArtifacts@1
-      inputs:
-        pathtoPublish: '$(Build.ArtifactStagingDirectory)'
-        artifactName: 'drop'
-        publishLocation: 'Container'
+  - task: DotNetCoreCLI@2
+    displayName: 'Run Test'
+    inputs:
+      command: 'test'
+      projects: '$(solution)'
+      arguments: '--configuration $(buildConfiguration)'
+
+  - task: DotNetCoreCLI@2
+    displayName: 'Run Publish'
+    inputs:
+      command: 'publish'
+      publishWebProjects: false
+      projects: '**/*.csproj'
+      #arguments: '--configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory) --verbosity detailed'
+      arguments: '--configuration $(BuildConfiguration) --output $(Build.ArtifactStagingDirectory)\publish --verbosity detailed'
+
+      zipAfterPublish: false
+      modifyOutputPath: false
   
+
+- job: PublishArtifacts
+  displayName: 'Publish Artifacts'
+  dependsOn: BuildAndTest
+  steps:
+  - task: PublishBuildArtifacts@1
+    displayName: 'Publish Artifacts'
+    inputs:
+      PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+      ArtifactName: 'WebAPIdrop'
+      publishLocation: 'Container'
